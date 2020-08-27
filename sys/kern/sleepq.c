@@ -11,7 +11,6 @@
 #include <sys/interrupt.h>
 #include <sys/errno.h>
 #include <sys/callout.h>
-#include <sys/sysinit.h>
 
 #define SC_TABLESIZE 256 /* Must be power of 2. */
 #define SC_MASK (SC_TABLESIZE - 1)
@@ -80,7 +79,7 @@ static void sq_ctor(sleepq_t *sq) {
   sq->sq_lock = SPIN_INITIALIZER(0);
 }
 
-static void sleepq_init(void) {
+void init_sleepq(void) {
   memset(sleepq_chains, 0, sizeof(sleepq_chains));
 
   for (int i = 0; i < SC_TABLESIZE; i++) {
@@ -88,9 +87,6 @@ static void sleepq_init(void) {
     sc->sc_lock = SPIN_INITIALIZER(0);
     TAILQ_INIT(&sc->sc_queues);
   }
-
-  /* Thread Zero has no sleepqueue, add it here. */
-  thread_self()->td_sleepqueue = sleepq_alloc();
 }
 
 static POOL_DEFINE(P_SLEEPQ, "sleepq", sizeof(sleepq_t));
@@ -382,5 +378,3 @@ int sleepq_wait_timed(void *wchan, const void *waitpt, systime_t timeout) {
     callout_stop(&td->td_slpcallout);
   return status;
 }
-
-SYSINIT_ADD(sleepq, sleepq_init, DEPS("sched"));

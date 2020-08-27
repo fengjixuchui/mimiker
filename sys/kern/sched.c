@@ -9,7 +9,6 @@
 #include <sys/thread.h>
 #include <sys/mutex.h>
 #include <sys/pcpu.h>
-#include <sys/sysinit.h>
 #include <sys/turnstile.h>
 
 static runq_t runq;
@@ -17,7 +16,7 @@ static bool sched_active = false;
 
 #define SLICE 10
 
-static void sched_init(void) {
+void init_sched(void) {
   runq_init(&runq);
 }
 
@@ -34,7 +33,7 @@ void sched_wakeup(thread_t *td, long reason) {
   assert(!td_is_running(td));
 
   /* Update sleep time. */
-  bintime_t now = getbintime();
+  bintime_t now = binuptime();
   bintime_sub(&now, &td->td_last_slptime);
   bintime_add(&td->td_slptime, &now);
 
@@ -117,7 +116,7 @@ static thread_t *sched_choose(void) {
     return PCPU_GET(idle_thread);
   runq_remove(&runq, td);
   td->td_state = TDS_RUNNING;
-  td->td_last_rtime = getbintime();
+  td->td_last_rtime = binuptime();
   return td;
 }
 
@@ -133,7 +132,7 @@ long sched_switch(void) {
   td->td_flags &= ~(TDF_SLICEEND | TDF_NEEDSWITCH);
 
   /* Update running time, */
-  bintime_t now = getbintime();
+  bintime_t now = binuptime();
   bintime_sub(&now, &td->td_last_rtime);
   bintime_add(&td->td_rtime, &now);
 
@@ -227,5 +226,3 @@ void preempt_enable(void) {
   td->td_pdnest--;
   sched_maybe_preempt();
 }
-
-SYSINIT_ADD(sched, sched_init, NODEPS);

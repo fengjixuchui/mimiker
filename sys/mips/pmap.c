@@ -16,7 +16,6 @@
 #include <sys/spinlock.h>
 #include <sys/mutex.h>
 #include <sys/sched.h>
-#include <sys/sysinit.h>
 #include <sys/vm_physmem.h>
 #include <bitstring.h>
 
@@ -120,7 +119,7 @@ void pmap_reset(pmap_t *pmap) {
   free_asid(pmap->asid);
 }
 
-void pmap_bootstrap(void) {
+void init_pmap(void) {
   pmap_setup(&kernel_pmap);
   kernel_pmap.pde = _kernel_pmap_pde;
 }
@@ -213,6 +212,7 @@ static pte_t vm_prot_map[] = {
 void pmap_kenter(vaddr_t va, paddr_t pa, vm_prot_t prot, unsigned flags) {
   pmap_t *pmap = pmap_kernel();
 
+  assert(page_aligned_p(pa) && page_aligned_p(va));
   assert(pmap_address_p(pmap, va));
   assert(pa != 0);
 

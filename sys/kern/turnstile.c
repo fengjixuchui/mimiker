@@ -4,7 +4,6 @@
 #include <sys/sched.h>
 #include <sys/turnstile.h>
 #include <sys/queue.h>
-#include <sys/sysinit.h>
 
 #define TC_TABLESIZE 256 /* Must be power of 2. */
 #define TC_MASK (TC_TABLESIZE - 1)
@@ -66,14 +65,11 @@ static void turnstile_ctor(turnstile_t *ts) {
   ts->ts_state = FREE_UNBLOCKED;
 }
 
-static void turnstile_init(void) {
+void init_turnstile(void) {
   for (int i = 0; i < TC_TABLESIZE; i++) {
     turnstile_chain_t *tc = &turnstile_chains[i];
     LIST_INIT(&tc->tc_turnstiles);
   }
-
-  /* Thread Zero has no turnstile, add it here. */
-  thread_self()->td_turnstile = turnstile_alloc();
 }
 
 static POOL_DEFINE(P_TURNSTILE, "turnstile", sizeof(turnstile_t));
@@ -370,5 +366,3 @@ void turnstile_broadcast(void *wchan) {
     assert(ts->ts_state == FREE_UNBLOCKED);
   }
 }
-
-SYSINIT_ADD(turnstile, turnstile_init, DEPS("sched"));

@@ -7,6 +7,7 @@ SOURCES = \
 	bus.c \
 	callout.c \
 	clock.c \
+	cmdline.c \
 	condvar.c \
 	console.c \
 	cred.c \
@@ -52,9 +53,7 @@ SOURCES = \
 	signal.c \
 	sleepq.c \
 	spinlock.c \
-	startup.c \
 	syscalls.c \
-	sysinit.c \
 	taskqueue.c \
 	turnstile.c \
 	thread.c \

@@ -146,7 +146,9 @@ typedef struct thread {
 thread_t *thread_self(void);
 
 /*! \brief Initialize first thread in the system. */
-void thread_bootstrap(void);
+void init_thread0(void);
+
+extern thread_t thread0;
 
 /*! \brief Create a thread.
  *
