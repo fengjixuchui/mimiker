@@ -5,6 +5,9 @@
 #include <sys/mutex.h>
 #include <sys/uio.h>
 #include <sys/refcnt.h>
+#include <sys/spinlock.h>
+#include <sys/condvar.h>
+#include <sys/file.h>
 
 /* Forward declarations */
 typedef struct vnode vnode_t;
@@ -72,6 +75,12 @@ typedef struct vnodeops {
 /* Fill missing entries with default vnode operation. */
 void vnodeops_init(vnodeops_t *vops);
 
+typedef struct {
+  bool vl_locked;
+  condvar_t vl_cv;
+  spin_t vl_interlock;
+} vnlock_t;
+
 typedef struct vnode {
   vnodetype_t v_type;        /* Vnode type, see above */
   TAILQ_ENTRY(vnode) v_list; /* Entry on the mount vnodes list */
@@ -87,7 +96,7 @@ typedef struct vnode {
   };
 
   refcnt_t v_usecnt;
-  mtx_t v_mtx;
+  vnlock_t v_lock;
 } vnode_t;
 
 static inline bool is_mountpoint(vnode_t *v) {
@@ -222,6 +231,14 @@ bool vnode_is_mounted(vnode_t *v);
 int vnode_open_generic(vnode_t *v, int mode, file_t *fp);
 int vnode_seek_generic(vnode_t *v, off_t oldoff, off_t newoff);
 int vnode_access_generic(vnode_t *v, accmode_t mode);
+
+/* Default fileops implementations for files with v-nodes. */
+int default_vnread(file_t *f, uio_t *uio);
+int default_vnwrite(file_t *f, uio_t *uio);
+int default_vnclose(file_t *f);
+int default_vnstat(file_t *f, stat_t *sb);
+int default_vnseek(file_t *f, off_t offset, int whence, off_t *newoffp);
+int default_vnioctl(file_t *f, u_long cmd, void *data);
 
 uint8_t vt2dt(vnodetype_t v_type);
 

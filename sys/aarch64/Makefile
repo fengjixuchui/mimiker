@@ -4,16 +4,19 @@ TOPDIR = $(realpath ../..)
 
 SOURCES = boot.c \
 	  context.c \
-	  copy.c \
+	  copy.S \
 	  evec.S \
-	  exception.c \
 	  interrupt.c \
 	  pmap.c \
 	  rootdev.c \
 	  $(BOARD).c \
 	  signal.c \
 	  start.S \
+	  switch.S \
+	  timer.c \
 	  thread.c \
+	  tlb.c \
+	  trap.c \
 	  ucontext.c
 
 CFLAGS.boot.c = -mcmodel=large

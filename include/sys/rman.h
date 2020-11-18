@@ -7,10 +7,12 @@
 #include <machine/bus_defs.h>
 
 /* TODO: remove RT_ISA after ISA-bridge driver is implemented */
-typedef enum { RT_UNKNOWN, RT_IOPORTS, RT_MEMORY, RT_ISA } res_type_t;
+typedef enum { RT_UNKNOWN, RT_IOPORTS, RT_MEMORY, RT_IRQ } res_type_t;
 typedef uintptr_t rman_addr_t;
 #define RMAN_ADDR_MAX UINTPTR_MAX
+#define RMAN_SIZE_MAX UINTPTR_MAX
 
+typedef struct intr_handler intr_handler_t;
 typedef struct rman rman_t;
 typedef struct resource resource_t;
 typedef struct device device_t;
@@ -27,18 +29,23 @@ typedef enum {
   RF_ACTIVE = 4,
 } res_flags_t;
 
+/* XXX: since a resource should be created only as a result of a call to
+ * `rman_alloc_resource` perhaps we could make the definition private? */
 struct resource {
   bus_space_tag_t r_bus_tag;       /* bus space methods */
   bus_space_handle_t r_bus_handle; /* bus space base address */
-  device_t *r_owner;               /* device that owns this resource */
   rman_t *r_rman;                  /* resource manager of this resource */
   rman_addr_t r_start;             /* first physical address of the resource */
   rman_addr_t r_end;               /* last (inclusive) physical address */
-  res_type_t r_type;               /* one of RT_* */
-  res_flags_t r_flags;             /* or'ed RF_* values */
-  int r_id;                        /* (optional) resource identifier */
-  TAILQ_ENTRY(resource) r_link;    /* link on resource manager list */
-  TAILQ_ENTRY(resource) r_device;  /* resources assigned to `r_owner` */
+  /* auxiliary data associated with a resource */
+  union {
+    intr_handler_t *r_handler;
+  };
+  /* TODO: remove r_type from this structure as r_rman->r_type contains the same
+   * information. See `rman_alloc_resource` for setting r_type of a resource. */
+  res_type_t r_type;            /* one of RT_* */
+  res_flags_t r_flags;          /* or'ed RF_* values */
+  TAILQ_ENTRY(resource) r_link; /* link on resource manager list */
 };
 
 #define RESOURCE_DECLARE(name) extern resource_t name[1]
@@ -56,13 +63,12 @@ struct rman {
  *
  * Looks up a region of size `count` between `start` and `end` address.
  * Assigned starting address will be aligned to `alignment` which must be
- * power of 2. Resource will be marked as owned by `dev` device.
+ * power of 2.
  *
  * \returns NULL if could not allocate a resource
  */
 resource_t *rman_alloc_resource(rman_t *rm, rman_addr_t start, rman_addr_t end,
-                                size_t count, size_t bound, res_flags_t flags,
-                                device_t *dev);
+                                size_t count, size_t bound, res_flags_t flags);
 
 /*! \brief Removes a resource from its resource manager and releases memory. */
 void rman_release_resource(resource_t *r);

@@ -3,6 +3,7 @@
 
 #include <sys/sigtypes.h>
 #include <machine/signal.h>
+#include <sys/siginfo.h>
 
 #define SIGHUP 1   /* hangup */
 #define SIGINT 2   /* interrupt */
@@ -69,8 +70,16 @@ typedef struct sigaction {
 #include <sys/cdefs.h>
 
 typedef struct proc proc_t;
+typedef struct pgrp pgrp_t;
 typedef struct thread thread_t;
-typedef struct exc_frame exc_frame_t;
+typedef struct ctx ctx_t;
+
+/*! \brief Notify the parent of a change in the child's status.
+ *
+ * \note Must be called with p::p_lock and p->p_parent::p_lock held.
+   Returns with both locks held.
+ */
+void sig_child(proc_t *p, int code);
 
 /*! \brief Signal a process.
  *
@@ -81,7 +90,13 @@ typedef struct exc_frame exc_frame_t;
  * \sa sig_post
  * \note Must be called with p::p_lock held. Returns with p::p_lock held.
  */
-void sig_kill(proc_t *p, signo_t sig);
+void sig_kill(proc_t *p, ksiginfo_t *ksi);
+
+/*! \brief Signal all processes in a process group.
+ *
+ * \note Must be called with pg::pg_lock held. Returns with pg::pg_lock held.
+ */
+void sig_pgkill(pgrp_t *pg, ksiginfo_t *ksi);
 
 /*! \brief Determines which signal should posted to current thread.
  *
@@ -93,17 +108,22 @@ void sig_kill(proc_t *p, signo_t sig);
  * \sa sig_post
  *
  * \returns signal number which should be posted or 0 if none */
-int sig_check(thread_t *td);
+int sig_check(thread_t *td, ksiginfo_t *ksi);
 
 /*! \brief Invoke the action triggered by a signal.
  *
  * If the default action for a signal is to terminate the process and
  * corresponding signal handler is not set, the process calls `sig_exit`.
+ * If the signal's action is to stop the process, this procedure stops
+ * the calling thread.
  *
- * \note Must be called with all_proc_mtx and current process p_mtx acquired!
+ * \note It's ok to call this procedure multiple times before returning
+ * to userspace. The handlers will be called in reverse order of calls
+ * to this procedure.
+ * \note Must be called with current process's p_mtx acquired!
  * \sa sig_exit
  */
-void sig_post(signo_t sig);
+void sig_post(ksiginfo_t *ksi);
 
 /*! \brief Terminate the process as the result of posting a signal. */
 __noreturn void sig_exit(thread_t *td, signo_t sig);
@@ -111,17 +131,22 @@ __noreturn void sig_exit(thread_t *td, signo_t sig);
 /*! \brief Delivers a hardware trap related signal to current thread.
  *
  * \note This is machine dependent code! */
-void sig_trap(exc_frame_t *frame, signo_t sig);
+void sig_trap(ctx_t *ctx, signo_t sig);
 
 /*! \brief Prepare user context for entry to signal handler action.
  *
  * \note This is machine dependent code! */
-int sig_send(signo_t sig, sigset_t *mask, sigaction_t *sa);
+int sig_send(signo_t sig, sigset_t *mask, sigaction_t *sa, ksiginfo_t *ksi);
 
 /*! \brief Restore original user context after signal handler was invoked.
  *
  * \note This is machine dependent code! */
 int sig_return(void);
+
+/*! \brief Reset handlers for caught signals on process exec.
+ *
+ * \note Must be called with p::p_lock held. */
+void sig_onexec(proc_t *p);
 
 /* System calls implementation. */
 int do_sigaction(signo_t sig, const sigaction_t *act, sigaction_t *oldact);

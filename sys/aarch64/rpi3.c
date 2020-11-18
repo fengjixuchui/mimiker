@@ -5,8 +5,10 @@
 #include <sys/initrd.h>
 #include <sys/thread.h>
 #include <sys/vm_physmem.h>
+#include <sys/context.h>
+#include <sys/interrupt.h>
 #include <aarch64/atags.h>
-#include <aarch64/exception.h>
+#include <aarch64/mcontext.h>
 #include <aarch64/vm_param.h>
 
 static int count_atags(atag_tag_t *atags) {
@@ -50,7 +52,7 @@ static void process_atags(atag_tag_t *atags, char **tokens, kstack_t *stk) {
 void *board_stack(atag_tag_t *atags) {
   kstack_t *stk = &thread0.td_kstack;
 
-  thread0.td_uframe = kstack_alloc_s(stk, exc_frame_t);
+  thread0.td_uctx = kstack_alloc_s(stk, user_ctx_t);
 
   int ntokens = count_atags(atags);
   char **kenvp = kstack_alloc(stk, (ntokens + 2) * sizeof(char *));
@@ -62,7 +64,8 @@ void *board_stack(atag_tag_t *atags) {
 }
 
 static void rpi3_physmem(void) {
-  paddr_t ram_start = 0;
+  /* XXX: workaround - pmap_enter fails to physical page with address 0 */
+  paddr_t ram_start = PAGESIZE;
   paddr_t ram_end = kenv_get_ulong("memsize");
   paddr_t kern_start = (paddr_t)__boot;
   paddr_t kern_end = (paddr_t)_bootmem_end;
@@ -70,6 +73,7 @@ static void rpi3_physmem(void) {
   paddr_t rd_end = rd_start + ramdisk_get_size();
 
   vm_physseg_plug(ram_start, kern_start);
+  vm_physseg_plug_used(kern_start, kern_end);
 
   if (rd_start != rd_end) {
     vm_physseg_plug(kern_end, rd_start);
@@ -83,5 +87,6 @@ static void rpi3_physmem(void) {
 __noreturn void board_init(void) {
   init_klog();
   rpi3_physmem();
+  intr_enable();
   kernel_init();
 }

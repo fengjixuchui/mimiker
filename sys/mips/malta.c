@@ -3,9 +3,8 @@
 #include <mips/cpuinfo.h>
 #include <mips/mips.h>
 #include <mips/malta.h>
-#include <mips/exception.h>
+#include <mips/context.h>
 #include <mips/interrupt.h>
-#include <mips/timer.h>
 #include <mips/tlb.h>
 #include <sys/klog.h>
 #include <sys/console.h>
@@ -79,7 +78,7 @@ void *board_stack(int argc, char **argv, char **envp) {
   kstack_t *stk = &thread0.td_kstack;
 
   /* See thread_entry_setup for explanation. */
-  thread0.td_uframe = kstack_alloc_s(stk, exc_frame_t);
+  thread0.td_uctx = kstack_alloc_s(stk, user_ctx_t);
 
   int ntokens = count_args(argc, argv, envp);
   char **kenvp = kstack_alloc(stk, (ntokens + 2) * sizeof(char *));
@@ -105,6 +104,7 @@ static void malta_physmem(void) {
   paddr_t rd_end = rd_start + ramdisk_get_size();
 
   vm_physseg_plug(ram_start, kern_start);
+  vm_physseg_plug_used(kern_start, kern_end);
 
   if (rd_start != rd_end) {
     vm_physseg_plug(kern_end, rd_start);
@@ -120,8 +120,6 @@ __noreturn void board_init(void) {
   init_klog();
   init_mips_cpu();
   init_mips_tlb();
-  init_mips_intr();
-  init_mips_timer();
   malta_physmem();
   intr_enable();
   kernel_init();

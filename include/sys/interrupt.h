@@ -6,6 +6,9 @@
 #include <sys/spinlock.h>
 #include <sys/priority.h>
 
+typedef struct ctx ctx_t;
+typedef struct device device_t;
+
 /*! \brief Called during kernel initialization. */
 void init_ithreads(void);
 
@@ -70,17 +73,12 @@ struct intr_handler {
   ih_service_t *ih_service; /* interrupt service routine (run in thread ctx) */
   intr_event_t *ih_event;   /* event we are connected to */
   void *ih_argument;        /* argument to pass to filter/service routines */
-  char *ih_name;            /* name of the handler */
-  prio_t ih_prio;           /* handler's priority (sort key for ie_handlers) */
+  const char *ih_name;      /* name of the handler */
+  /* XXX: do we really need ih_prio? it has no real use cases so far... */
+  prio_t ih_prio; /* handler's priority (sort key for ie_handlers) */
 };
 
 typedef TAILQ_HEAD(, intr_handler) ih_list_t;
-
-#define INTR_HANDLER_INIT(filter, service, argument, desc, prio)               \
-  (intr_handler_t) {                                                           \
-    .ih_filter = (filter), .ih_service = (service), .ih_argument = (argument), \
-    .ih_name = (desc), .ih_prio = (prio)                                       \
-  }
 
 /* Software representation of interrupt line. */
 typedef struct intr_event {
@@ -97,11 +95,17 @@ typedef struct intr_event {
 
 typedef TAILQ_HEAD(, intr_event) ie_list_t;
 
-void intr_event_init(intr_event_t *ie, unsigned irq, const char *name,
-                     ie_action_t *disable, ie_action_t *enable, void *source);
-void intr_event_register(intr_event_t *ie);
-void intr_event_add_handler(intr_event_t *ie, intr_handler_t *ih);
+intr_event_t *intr_event_create(void *source, int irq, ie_action_t *disable,
+                                ie_action_t *enable, const char *name);
+intr_handler_t *intr_event_add_handler(intr_event_t *ie, ih_filter_t *filter,
+                                       ih_service_t *service, void *arg,
+                                       const char *name);
 void intr_event_remove_handler(intr_handler_t *ih);
 void intr_event_run_handlers(intr_event_t *ie);
+
+typedef void (*intr_root_filter_t)(ctx_t *ctx, device_t *dev, void *arg);
+
+void intr_root_claim(intr_root_filter_t filter, device_t *dev, void *arg);
+void intr_root_handler(ctx_t *ctx);
 
 #endif /* !_SYS_INTERRUPT_H_ */

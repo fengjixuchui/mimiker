@@ -3,6 +3,7 @@
 
 #include <machine/bus_defs.h>
 #include <sys/device.h>
+#include <sys/interrupt.h>
 #include <sys/rman.h>
 
 typedef struct bus_methods bus_methods_t;
@@ -135,15 +136,16 @@ extern bus_space_t *generic_bus_space;
 #define bus_space_map(t, a, s, hp) (*(t)->bs_map)((a), (s), (hp))
 
 struct bus_methods {
-  void (*intr_setup)(device_t *dev, unsigned num, intr_handler_t *handler);
-  void (*intr_teardown)(device_t *dev, intr_handler_t *handler);
-  resource_t *(*alloc_resource)(device_t *bus, device_t *child, res_type_t type,
-                                int rid, rman_addr_t start, rman_addr_t end,
-                                size_t size, res_flags_t flags);
-  void (*release_resource)(device_t *bus, device_t *child, res_type_t type,
-                           int rid, resource_t *r);
-  void (*activate_resource)(device_t *bus, device_t *child, res_type_t type,
-                            int rid, resource_t *r);
+  void (*intr_setup)(device_t *dev, resource_t *irq, ih_filter_t *filter,
+                     ih_service_t *service, void *arg, const char *name);
+  void (*intr_teardown)(device_t *dev, resource_t *irq);
+  resource_t *(*alloc_resource)(device_t *dev, res_type_t type, int rid,
+                                rman_addr_t start, rman_addr_t end, size_t size,
+                                res_flags_t flags);
+  void (*release_resource)(device_t *dev, res_type_t type, int rid,
+                           resource_t *r);
+  int (*activate_resource)(device_t *dev, res_type_t type, int rid,
+                           resource_t *r);
 };
 
 struct bus_driver {
@@ -153,13 +155,14 @@ struct bus_driver {
 
 #define BUS_DRIVER(dev) ((bus_driver_t *)((dev)->parent->driver))
 
-static inline void bus_intr_setup(device_t *dev, unsigned num,
-                                  intr_handler_t *handler) {
-  BUS_DRIVER(dev)->bus.intr_setup(dev, num, handler);
+static inline void bus_intr_setup(device_t *dev, resource_t *irq,
+                                  ih_filter_t *filter, ih_service_t *service,
+                                  void *arg, const char *name) {
+  BUS_DRIVER(dev)->bus.intr_setup(dev, irq, filter, service, arg, name);
 }
 
-static inline void bus_intr_teardown(device_t *dev, intr_handler_t *handler) {
-  BUS_DRIVER(dev)->bus.intr_teardown(dev, handler);
+static inline void bus_intr_teardown(device_t *dev, resource_t *irq) {
+  BUS_DRIVER(dev)->bus.intr_teardown(dev, irq);
 }
 
 /*! \brief Allocates a resource of type \a type and size \a size between
@@ -179,9 +182,12 @@ static inline resource_t *bus_alloc_resource(device_t *dev, res_type_t type,
                                              int rid, rman_addr_t start,
                                              rman_addr_t end, size_t size,
                                              res_flags_t flags) {
-  return BUS_DRIVER(dev)->bus.alloc_resource(dev->parent, dev, type, rid, start,
-                                             end, size, flags);
+  return BUS_DRIVER(dev)->bus.alloc_resource(dev, type, rid, start, end, size,
+                                             flags);
 }
+
+#define bus_alloc_irq(dev, rid, irq, flags)                                    \
+  bus_alloc_resource((dev), RT_IRQ, (rid), (irq), (irq), 1, (flags))
 
 /*! \brief Allocates resource for a device.
  *
@@ -192,8 +198,8 @@ static inline resource_t *bus_alloc_resource_anywhere(device_t *dev,
                                                       res_type_t type, int rid,
                                                       size_t size,
                                                       res_flags_t flags) {
-  return BUS_DRIVER(dev)->bus.alloc_resource(dev->parent, dev, type, rid, 0,
-                                             RMAN_ADDR_MAX, size, flags);
+  return BUS_DRIVER(dev)->bus.alloc_resource(dev, type, rid, 0, RMAN_ADDR_MAX,
+                                             size, flags);
 }
 
 /*! \brief Allocates resource for a device.
@@ -204,23 +210,25 @@ static inline resource_t *bus_alloc_resource_anywhere(device_t *dev,
 static inline resource_t *bus_alloc_resource_any(device_t *dev, res_type_t type,
                                                  int rid, res_flags_t flags) {
 
-  return BUS_DRIVER(dev)->bus.alloc_resource(dev->parent, dev, type, rid, 0,
-                                             RMAN_ADDR_MAX, 1, flags);
+  return BUS_DRIVER(dev)->bus.alloc_resource(dev, type, rid, 0, RMAN_ADDR_MAX,
+                                             RMAN_SIZE_MAX, flags);
 }
 
-static inline void bus_activate_resource(device_t *dev, res_type_t type,
-                                         int rid, resource_t *r) {
-  BUS_DRIVER(dev)->bus.activate_resource(dev->parent, dev, type, rid, r);
-}
+/*! \brief Activates resource for a device.
+ *
+ * This is a wrapper that calls bus method `activate_resource`.
+ *
+ * It performs common tasks like: check if resource has been already activated,
+ * mark resource as activated if the method returned success.
+ */
+int bus_activate_resource(device_t *dev, res_type_t type, int rid,
+                          resource_t *r);
 
 static inline void bus_release_resource(device_t *dev, res_type_t type, int rid,
                                         resource_t *r) {
-  BUS_DRIVER(dev)->bus.release_resource(dev->parent, dev, type, rid, r);
+  BUS_DRIVER(dev)->bus.release_resource(dev, type, rid, r);
 }
 
 int bus_generic_probe(device_t *bus);
-
-/* This function should be used only for leafs in device tree. */
-device_t *bus_generic_identify(driver_t *driver, device_t *bus);
 
 #endif /* !_SYS_BUS_H_ */

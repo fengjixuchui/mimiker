@@ -19,11 +19,14 @@
 
 #define RTC_ASCTIME_SIZE 32
 
+#define RTC_VENDOR_ID 0x8086
+#define RTC_DEVICE_ID 0x7113
+
 typedef struct rtc_state {
   resource_t *regs;
   char asctime[RTC_ASCTIME_SIZE];
   unsigned counter; /* TODO Should that be part of intr_handler_t ? */
-  intr_handler_t intr_handler;
+  resource_t *irq_res;
 } rtc_state_t;
 
 /*
@@ -101,12 +104,11 @@ static int rtc_attach(device_t *dev) {
   rtc_state_t *rtc = dev->state;
 
   rtc->regs = bus_alloc_resource(
-    dev, RT_ISA, 0, IO_RTC, IO_RTC + IO_RTCSIZE - 1, IO_RTCSIZE, RF_ACTIVE);
+    dev, RT_IOPORTS, 0, IO_RTC, IO_RTC + IO_RTCSIZE - 1, IO_RTCSIZE, RF_ACTIVE);
   assert(rtc->regs != NULL);
 
-  rtc->intr_handler =
-    INTR_HANDLER_INIT(rtc_intr, NULL, rtc, "RTC periodic timer", 0);
-  bus_intr_setup(dev, 8, &rtc->intr_handler);
+  rtc->irq_res = bus_alloc_irq(dev, 0, 8 /* magic */, RF_ACTIVE);
+  bus_intr_setup(dev, rtc->irq_res, rtc_intr, NULL, rtc, "RTC periodic timer");
 
   /* Configure how the time is presented through registers. */
   rtc_setb(rtc->regs, MC_REGB, MC_REGB_BINARY | MC_REGB_24HR);
@@ -126,11 +128,18 @@ static int rtc_attach(device_t *dev) {
   return 0;
 }
 
+static int rtc_probe(device_t *dev) {
+  pci_device_t *pcid = pci_device_of(dev);
+  return pci_device_match(pcid, RTC_VENDOR_ID, RTC_DEVICE_ID);
+}
+
+/* clang-format off */
 static driver_t rtc_driver = {
   .desc = "MC146818 RTC driver",
   .size = sizeof(rtc_state_t),
   .attach = rtc_attach,
-  .identify = bus_generic_identify,
+  .probe = rtc_probe
 };
+/* clang-format on */
 
 DEVCLASS_ENTRY(pci, rtc_driver);
