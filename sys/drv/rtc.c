@@ -19,9 +19,6 @@
 
 #define RTC_ASCTIME_SIZE 32
 
-#define RTC_VENDOR_ID 0x8086
-#define RTC_DEVICE_ID 0x7113
-
 typedef struct rtc_state {
   resource_t *regs;
   char asctime[RTC_ASCTIME_SIZE];
@@ -79,7 +76,7 @@ static intr_filter_t rtc_intr(void *data) {
 }
 
 static int rtc_time_read(vnode_t *v, uio_t *uio, int ioflag) {
-  rtc_state_t *rtc = v->v_data;
+  rtc_state_t *rtc = devfs_node_data(v);
   tm_t t;
 
   uio->uio_offset = 0; /* This device does not support offsets. */
@@ -93,21 +90,15 @@ static int rtc_time_read(vnode_t *v, uio_t *uio, int ioflag) {
   return uiomove_frombuf(rtc->asctime, count, uio);
 }
 
-static vnodeops_t rtc_time_vnodeops = {.v_open = vnode_open_generic,
-                                       .v_read = rtc_time_read};
+static vnodeops_t rtc_time_vnodeops = {.v_read = rtc_time_read};
 
 static int rtc_attach(device_t *dev) {
-  assert(dev->parent->bus == DEV_BUS_PCI);
-
-  vnodeops_init(&rtc_time_vnodeops);
-
   rtc_state_t *rtc = dev->state;
 
-  rtc->regs = bus_alloc_resource(
-    dev, RT_IOPORTS, 0, IO_RTC, IO_RTC + IO_RTCSIZE - 1, IO_RTCSIZE, RF_ACTIVE);
+  rtc->regs = device_take_ioports(dev, 0, RF_ACTIVE);
   assert(rtc->regs != NULL);
 
-  rtc->irq_res = bus_alloc_irq(dev, 0, 8 /* magic */, RF_ACTIVE);
+  rtc->irq_res = device_take_irq(dev, 0, RF_ACTIVE);
   bus_intr_setup(dev, rtc->irq_res, rtc_intr, NULL, rtc, "RTC periodic timer");
 
   /* Configure how the time is presented through registers. */
@@ -118,7 +109,7 @@ static int rtc_attach(device_t *dev) {
   rtc_setb(rtc->regs, MC_REGB, MC_REGB_PIE);
 
   /* Prepare /dev/rtc interface. */
-  devfs_makedev(NULL, "rtc", &rtc_time_vnodeops, rtc);
+  devfs_makedev(NULL, "rtc", &rtc_time_vnodeops, rtc, NULL);
 
   tm_t t;
 
@@ -129,8 +120,7 @@ static int rtc_attach(device_t *dev) {
 }
 
 static int rtc_probe(device_t *dev) {
-  pci_device_t *pcid = pci_device_of(dev);
-  return pci_device_match(pcid, RTC_VENDOR_ID, RTC_DEVICE_ID);
+  return dev->unit == 2; /* XXX: unit 2 assigned by gt_pci */
 }
 
 /* clang-format off */

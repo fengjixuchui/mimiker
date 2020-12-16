@@ -7,6 +7,8 @@ SOURCES = boot.c \
 	  copy.S \
 	  evec.S \
 	  interrupt.c \
+	  gpio.c \
+	  pl011.c \
 	  pmap.c \
 	  rootdev.c \
 	  $(BOARD).c \
@@ -16,8 +18,7 @@ SOURCES = boot.c \
 	  timer.c \
 	  thread.c \
 	  tlb.c \
-	  trap.c \
-	  ucontext.c
+	  trap.c
 
 CFLAGS.boot.c = -mcmodel=large
 CFLAGS.rpi3.c = -mcmodel=large

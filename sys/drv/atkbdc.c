@@ -63,7 +63,7 @@ static void write_data(resource_t *regs, uint8_t byte) {
 }
 
 static int scancode_read(vnode_t *v, uio_t *uio, int ioflag) {
-  atkbdc_state_t *atkbdc = v->v_data;
+  atkbdc_state_t *atkbdc = devfs_node_data(v);
   int error;
 
   uio->uio_offset = 0; /* This device does not support offsets. */
@@ -81,7 +81,6 @@ static int scancode_read(vnode_t *v, uio_t *uio, int ioflag) {
 }
 
 static vnodeops_t scancode_vnodeops = {
-  .v_open = vnode_open_generic,
   .v_read = scancode_read,
 };
 
@@ -122,16 +121,10 @@ static intr_filter_t atkbdc_intr(void *data) {
 }
 
 static int atkbdc_probe(device_t *dev) {
-  assert(dev->parent->bus == DEV_BUS_PCI);
-
-  pci_device_t *pcid = pci_device_of(dev);
-  if (!pci_device_match(pcid, ATKBDC_VENDOR_ID, ATKBDC_DEVICE_ID))
+  if (dev->unit != 0) /* XXX: unit 0 assigned by gt_pci */
     return 0;
 
-  /* TODO: Implement resource deallocation in rman.
-   * When probe is not successful, driver should release claimed resources. */
-  resource_t *regs = bus_alloc_resource(
-    dev, RT_IOPORTS, 0, IO_KBD, IO_KBD + IO_KBDSIZE - 1, IO_KBDSIZE, RF_ACTIVE);
+  resource_t *regs = device_take_ioports(dev, 0, RF_ACTIVE);
   assert(regs != NULL);
 
   if (!kbd_reset(regs)) {
@@ -150,15 +143,10 @@ static int atkbdc_probe(device_t *dev) {
   if (read_data(regs) != KBD_ACK)
     return 0;
 
-  bus_release_resource(dev, RT_IOPORTS, 0, regs);
   return 1;
 }
 
 static int atkbdc_attach(device_t *dev) {
-  assert(dev->parent->bus == DEV_BUS_PCI);
-
-  vnodeops_init(&scancode_vnodeops);
-
   atkbdc_state_t *atkbdc = dev->state;
 
   atkbdc->scancodes.data = kmalloc(M_DEV, KBD_BUFSIZE, M_ZERO);
@@ -166,11 +154,10 @@ static int atkbdc_attach(device_t *dev) {
 
   spin_init(&atkbdc->lock, 0);
   cv_init(&atkbdc->nonempty, "AT keyboard buffer non-empty");
-  atkbdc->regs = bus_alloc_resource(
-    dev, RT_IOPORTS, 0, IO_KBD, IO_KBD + IO_KBDSIZE - 1, IO_KBDSIZE, RF_ACTIVE);
+  atkbdc->regs = device_take_ioports(dev, 0, RF_ACTIVE);
   assert(atkbdc->regs != NULL);
 
-  atkbdc->irq_res = bus_alloc_irq(dev, 0, 1 /* magic */, RF_ACTIVE);
+  atkbdc->irq_res = device_take_irq(dev, 0, RF_ACTIVE);
   bus_intr_setup(dev, atkbdc->irq_res, atkbdc_intr, NULL, atkbdc,
                  "AT keyboard controller");
 
@@ -179,7 +166,7 @@ static int atkbdc_attach(device_t *dev) {
   write_data(atkbdc->regs, KBD_ENABLE_KBD_INT);
 
   /* Prepare /dev/scancode interface. */
-  devfs_makedev(NULL, "scancode", &scancode_vnodeops, atkbdc);
+  devfs_makedev(NULL, "scancode", &scancode_vnodeops, atkbdc, NULL);
 
   return 0;
 }
